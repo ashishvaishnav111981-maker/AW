@@ -18,13 +18,15 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
-      - run: npm run build
-      - name: Point the app to this repo's GitHub Pages site
+      - name: Put the app files into the APK (dist) and set its update address
         env:
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REMOTE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: |
-          node -e "const fs=require('fs');const f='capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));c.server.url='https://'+process.env.OWNER+'.github.io/'+process.env.REPO+'/';fs.writeFileSync(f,JSON.stringify(c,null,2));"
+          mkdir -p dist && cp index.html icon.png dist/
+          sed -i "s#location.pathname#'$REMOTE'#g" dist/index.html
+      - name: Load the app from inside the APK (no server URL)
+        run: |
+          node -e "const fs=require('fs');const f='capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));delete c.server;fs.writeFileSync(f,JSON.stringify(c,null,2));"
       - name: Create Android project (first run only)
         run: |
           if [ ! -d android ]; then npx cap add android; fi
