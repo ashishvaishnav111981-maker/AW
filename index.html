@@ -52,9 +52,15 @@ textarea { width: 100%; background: var(--btn); color: var(--ink); border: 1px s
   <section id="panel"></section>
 </main>
 
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // हर अपडेट में यह वर्ज़न बदलें (जैसे 'AW-3'), तभी "अपडेट" बटन नया वर्ज़न पहचानेगा
 const VERSION = 'AW-2';
