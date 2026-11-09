@@ -1,31 +1,285 @@
 <!doctype html>
 <html lang="hi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>AW</title>
-  <link rel="icon" href="./icon.png" />
-  <link rel="stylesheet" href="./src/style.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AW</title>
+<link rel="icon" href="./icon.png" />
+<style>
+:root { --bg:#0f1a24; --ink:#eef3f6; --muted:#8ea3b0; --amber:#f2a541; --panel:#16242f; --line:#223444; --btn:#1f3445; --btn-line:#2d4a5e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: "Noto Sans Devanagari", system-ui, sans-serif; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100dvh; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+header { padding: 12px 16px 8px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.brand img { width: 36px; height: 36px; border-radius: 50%; }
+.brand h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
+button { font: inherit; font-size: 14px; color: var(--ink); background: var(--btn); border: 1px solid var(--btn-line); border-radius: 999px; padding: 8px 14px; flex: none; }
+button.on { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+button:disabled { opacity: .4; }
+button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+#upd { padding: 6px 12px; font-size: 13px; }
+#msg { display: block; min-height: 18px; font-size: 12px; color: var(--muted); margin: 0 2px 8px; }
+nav { display: flex; gap: 8px; overflow-x: auto; }
+main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#wrap { flex: 1; min-height: 0; position: relative; }
+#wrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#panel { padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); min-height: 120px; }
+#panel p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+#panel b { color: var(--ink); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+textarea { width: 100%; background: var(--btn); color: var(--ink); border: 1px solid var(--btn-line); border-radius: 10px; padding: 8px; font: inherit; margin-bottom: 8px; }
+</style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <img src="./icon.png" alt="AW" />
-      <h1>AW · 3D वर्कप्लेस</h1>
-      <button id="upd" title="नया अपडेट लें">अपडेट</button>
-    </div>
-    <nav id="topics">
-      <button data-topic="lever" class="on">लीवर</button>
-      <button data-topic="body">मानव शरीर</button>
-      <button data-topic="physics">भौतिकी</button>
-      <button data-topic="chemistry">रसायन</button>
-      <button data-topic="notes">नोट्स</button>
-    </nav>
-  </header>
-  <main>
-    <div id="canvas-wrap"></div>
-    <section id="panel"></section>
-  </main>
-  <script type="module" src="./src/main.js"></script>
+<header>
+  <div class="brand">
+    <img src="./icon.png" alt="AW" />
+    <h1>AW · 3D वर्कप्लेस</h1>
+    <button id="upd">अपडेट</button>
+  </div>
+  <span id="msg"></span>
+  <nav id="topics">
+    <button data-topic="lever" class="on">लीवर</button>
+    <button data-topic="body">मानव शरीर</button>
+    <button data-topic="physics">भौतिकी</button>
+    <button data-topic="chemistry">रसायन</button>
+    <button data-topic="notes">नोट्स</button>
+  </nav>
+</header>
+<main>
+  <div id="wrap"></div>
+  <section id="panel"></section>
+</main>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+// हर अपडेट में यह वर्ज़न बदलें (जैसे 'AW-3'), तभी "अपडेट" बटन नया वर्ज़न पहचानेगा
+const VERSION = 'AW-2';
+
+const TOPICS = {
+  lever: { threeD: true },
+  body: { threeD: false, note: 'शरीर का 3D मॉडल (हड्डियाँ, अंग) अभी जोड़ना बाकी है।' },
+  physics: { threeD: false },
+  chemistry: { threeD: false, note: 'बॉन्ड बनने का 3D दृश्य अभी जोड़ना बाकी है।' },
+  notes: { threeD: false, note: 'नोट्स की फोटो से साफ़ नोट्स बनाने का फीचर अभी बाकी है।' },
+};
+
+const $ = (id) => document.getElementById(id);
+const wrap = $('wrap'), panel = $('panel'), msg = $('msg');
+const setMsg = (t) => { msg.textContent = t; };
+
+// Jarvis या दूसरे कंट्रोलर के लिए कमांड: AW.run('toggleExplode')
+const commands = {};
+const registerCommand = (name, fn) => { commands[name] = fn; };
+window.AW = { run: (name, arg) => commands[name]?.(arg) };
+
+// 3D स्टेज
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+wrap.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1a24);
+const HOME_POS = new THREE.Vector3(4, 3, 6), HOME_TARGET = new THREE.Vector3(0, 0, 0);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.copy(HOME_POS);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 1.5; controls.maxDistance = 14;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(5, 8, 5);
+scene.add(sun);
+
+// लीवर के हिस्से (सादे शेप)
+const lever = new THREE.Group();
+scene.add(lever);
+const mat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.5, transparent: true });
+const parts = {
+  beam: { mesh: new THREE.Mesh(new THREE.BoxGeometry(6, 0.25, 0.6), mat(0x3fb8af)), pos: [0, 0.125, 0], off: [0, 0, 0], label: 'बीम (छड़)' },
+  fulcrum: { mesh: new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 32), mat(0x8ea3b0)), pos: [0, -0.6, 0], off: [0, -1.2, 0], label: 'फुलक्रम (आधार बिंदु)' },
+  load: { mesh: new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat(0xf2a541)), pos: [-2.2, 0.65, 0], off: [-1, 1.2, 0], label: 'भार (Load)' },
+  effort: { mesh: new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 16), mat(0x9b8cff)), pos: [2.2, 0.65, 0], off: [1, 1.2, 0], label: 'बल (Effort)' },
+};
+for (const [key, p] of Object.entries(parts)) {
+  p.mesh.name = key;
+  p.mesh.userData.label = p.label;
+  p.home = new THREE.Vector3(...p.pos);
+  p.away = p.home.clone().add(new THREE.Vector3(...p.off));
+  p.mesh.position.copy(p.home);
+  lever.add(p.mesh);
+}
+
+// अतिरिक्त वज़न जोड़ना/हटाना
+const SLOTS = [-1.2, 1.2, -0.4, 0.4, 0];
+const weights = [];
+function addWeight() {
+  if (weights.length >= 10) return;
+  const i = weights.length;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat(0xf2a541));
+  m.position.set(SLOTS[i % 5], 0.5 + Math.floor(i / 5) * 0.5, 0);
+  m.userData.label = 'अतिरिक्त भार';
+  lever.add(m);
+  weights.push(m);
+}
+function removeWeight() {
+  const m = weights.pop();
+  if (!m) return;
+  if (state.selected === m) state.selected = null;
+  lever.remove(m);
+  m.geometry.dispose();
+  m.material.dispose();
+}
+
+const state = { selected: null, transparent: false, exploded: false, goal: null };
+
+function applyStyle() {
+  for (const m of lever.children) {
+    const fade = state.transparent && m !== state.selected;
+    m.material.opacity = fade ? 0.3 : 1;
+    m.material.depthWrite = !fade;
+    m.material.emissive.set(m === state.selected ? 0x663300 : 0x000000);
+  }
+}
+
+function zoomToSelected() {
+  if (!state.selected) return;
+  const t = new THREE.Vector3();
+  state.selected.getWorldPosition(t);
+  state.goal = { target: t, pos: t.clone().add(new THREE.Vector3(1.2, 0.8, 2)) };
+}
+
+// टैप से हिस्सा चुनना (ड्रैग होने पर नहीं)
+const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const moved = downAt ? Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) : 99;
+  downAt = null;
+  if (moved > 6) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(lever.children, false)[0];
+  state.selected = hit ? hit.object : null;
+  applyStyle();
+  renderPanel();
+});
+
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap);
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (!wrap.offsetParent) return; // 3D स्क्रीन दिख न रही हो तो रेंडर न करें
+  for (const p of Object.values(parts)) p.mesh.position.lerp(state.exploded ? p.away : p.home, 0.1);
+  if (state.goal) {
+    controls.target.lerp(state.goal.target, 0.08);
+    camera.position.lerp(state.goal.pos, 0.08);
+    if (camera.position.distanceTo(state.goal.pos) < 0.01) state.goal = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// पैनल और टॉपिक
+let currentTopic = 'lever';
+
+function renderPanel() {
+  if (currentTopic === 'lever') {
+    const sel = state.selected?.userData.label;
+    panel.innerHTML = `
+      <p>${sel ? `चुना गया: <b>${sel}</b>` : 'किसी हिस्से पर टैप करें। उंगली से घुमाकर लीवर को हर तरफ़ से देखें।'}</p>
+      <div class="row">
+        <button data-act="zoom" ${sel ? '' : 'disabled'}>ज़ूम करें</button>
+        <button data-act="transparent" class="${state.transparent ? 'on' : ''}">पारदर्शी</button>
+        <button data-act="explode" class="${state.exploded ? 'on' : ''}">हिस्से अलग करें</button>
+        <button data-act="add">वज़न जोड़ें</button>
+        <button data-act="remove">वज़न हटाएँ</button>
+        <button data-act="home">पूरा दृश्य</button>
+      </div>`;
+  } else if (currentTopic === 'physics') {
+    panel.innerHTML = `
+      <p>भौतिकी का सवाल लिखें।</p>
+      <textarea id="q" rows="2"></textarea>
+      <div class="row"><button data-act="solve">हल करें</button></div>
+      <p id="out"></p>`;
+  } else {
+    panel.innerHTML = `<p>${TOPICS[currentTopic].note ?? ''}</p>`;
+  }
+}
+
+// अभी AI बैकएंड नहीं जुड़ा है, इसलिए यह सिर्फ़ संदेश देता है
+async function solvePhysicsAI(question) {
+  return 'AI बैकएंड अभी जुड़ा नहीं है, इसलिए यह सवाल अभी हल नहीं हो सकता।';
+}
+
+async function solve() {
+  const q = $('q').value.trim();
+  const out = $('out');
+  if (!q) { out.textContent = 'पहले सवाल लिखें।'; return; }
+  out.textContent = 'हल हो रहा है...';
+  out.textContent = await solvePhysicsAI(q);
+}
+
+panel.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (!act) return;
+  if (act === 'solve') return solve();
+  if (act === 'zoom') zoomToSelected();
+  if (act === 'transparent') { state.transparent = !state.transparent; applyStyle(); }
+  if (act === 'explode') state.exploded = !state.exploded;
+  if (act === 'add') { addWeight(); applyStyle(); }
+  if (act === 'remove') { removeWeight(); applyStyle(); }
+  if (act === 'home') { state.goal = { target: HOME_TARGET.clone(), pos: HOME_POS.clone() }; state.selected = null; applyStyle(); }
+  renderPanel();
+});
+
+function setTopic(key) {
+  if (!TOPICS[key]) return;
+  currentTopic = key;
+  document.querySelectorAll('#topics button').forEach((b) => b.classList.toggle('on', b.dataset.topic === key));
+  wrap.style.display = TOPICS[key].threeD ? '' : 'none';
+  renderPanel();
+}
+$('topics').addEventListener('click', (e) => {
+  const key = e.target.closest('button')?.dataset.topic;
+  if (key) setTopic(key);
+});
+
+registerCommand('openTopic', setTopic);
+registerCommand('toggleTransparent', () => { state.transparent = !state.transparent; applyStyle(); renderPanel(); });
+registerCommand('toggleExplode', () => { state.exploded = !state.exploded; renderPanel(); });
+
+// अपडेट बटन: नया वर्ज़न है या नहीं, यह जाँचकर बताता है
+async function checkUpdate() {
+  setMsg('जाँच हो रही है...');
+  try {
+    const res = await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    const m = (await res.text()).match(/const VERSION = '([^']+)'/);
+    if (m && m[1] !== VERSION) {
+      setMsg('नया वर्ज़न मिला, लोड हो रहा है...');
+      location.href = location.pathname + '?v=' + Date.now();
+    } else {
+      setMsg('आपके पास पहले से नया वर्ज़न है (' + VERSION + ')।');
+    }
+  } catch {
+    setMsg('अपडेट जाँच नहीं हो सकी। इंटरनेट जाँचें, या साइट अभी चालू नहीं है।');
+  }
+}
+$('upd').addEventListener('click', checkUpdate);
+
+setMsg('वर्ज़न ' + VERSION);
+renderPanel();
+animate();
+</script>
 </body>
 </html>
