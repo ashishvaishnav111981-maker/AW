@@ -1,0 +1,9 @@
+{
+  "appId": "com.nextgrid.aw",
+  "appName": "AW",
+  "webDir": "dist",
+  "server": {
+    "url": "https://YOUR-USERNAME.github.io/aw/",
+    "cleartext": false
+  }
+}
